@@ -1,3 +1,5 @@
+import { Type } from '@nestjs/common';
+
 export interface DistributedLockOptions {
   /** PostgreSQL连接名称（用于连接多个数据库的情况） */
   connectionName?: string;
@@ -10,4 +12,15 @@ export interface DistributedLockOptions {
   
   /** 重试间隔（毫秒） */
   retryDelay?: number;
+}
+
+export interface DistributedLockOptionsFactory {
+  createDistributedLockOptions(): Promise<DistributedLockOptions> | DistributedLockOptions;
+}
+
+export interface DistributedLockAsyncOptions {
+  useExisting?: Type<DistributedLockOptionsFactory>;
+  useClass?: Type<DistributedLockOptionsFactory>;
+  useFactory?: (...args: any[]) => Promise<DistributedLockOptions> | DistributedLockOptions;
+  inject?: any[];
 }

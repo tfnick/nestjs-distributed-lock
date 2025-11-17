@@ -1,7 +1,7 @@
-import { DynamicModule, Module, Provider } from '@nestjs/common';
+import { DynamicModule, Module, Provider, Type } from '@nestjs/common';
 import { DistributedLockService } from './distributed-lock.service';
 import { DistributedLockInterceptor } from './interceptors';
-import { DistributedLockOptions } from './interfaces';
+import { DistributedLockOptions, DistributedLockAsyncOptions, DistributedLockOptionsFactory } from './interfaces';
 import { DISTRIBUTED_LOCK_MODULE_OPTIONS } from './distributed-lock.constants';
 
 @Module({})
@@ -24,16 +24,9 @@ export class DistributedLockModule {
     };
   }
 
-  static forRootAsync(options: {
-    useFactory: (...args: any[]) => Promise<DistributedLockOptions> | DistributedLockOptions;
-    inject?: any[];
-  }): DynamicModule {
+  static forRootAsync(options: DistributedLockAsyncOptions): DynamicModule {
     const providers: Provider[] = [
-      {
-        provide: DISTRIBUTED_LOCK_MODULE_OPTIONS,
-        useFactory: options.useFactory,
-        inject: options.inject || [],
-      },
+      this.createAsyncOptionsProvider(options),
       DistributedLockService,
       DistributedLockInterceptor,
     ];
@@ -43,6 +36,29 @@ export class DistributedLockModule {
       providers,
       exports: [DistributedLockService, DistributedLockInterceptor],
       global: true,
+    };
+  }
+
+  private static createAsyncOptionsProvider(
+    options: DistributedLockAsyncOptions,
+  ): Provider {
+    if (options.useFactory) {
+      return {
+        provide: DISTRIBUTED_LOCK_MODULE_OPTIONS,
+        useFactory: options.useFactory,
+        inject: options.inject || [],
+      };
+    }
+
+    const inject = [
+      (options.useClass || options.useExisting) as Type<DistributedLockOptionsFactory>,
+    ];
+
+    return {
+      provide: DISTRIBUTED_LOCK_MODULE_OPTIONS,
+      useFactory: async (optionsFactory: DistributedLockOptionsFactory) =>
+        await optionsFactory.createDistributedLockOptions(),
+      inject,
     };
   }
 }
