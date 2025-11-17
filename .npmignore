@@ -1,0 +1,14 @@
+# 需要排除的文件（不要包含在 npm 包中）
+src/
+examples/
+.gitignore
+.npmignore
+.eslintrc.js
+.prettierrc
+jest.config.js
+*.test.ts
+*.spec.ts
+tsconfig.json
+tsconfig.tsbuildinfo
+README.md
+node_modules/
