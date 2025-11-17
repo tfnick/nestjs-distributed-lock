@@ -1,9 +1,17 @@
 {
   "name": "@tfnick/nestjs-distributed-lock",
-  "version": "1.0.1",
+  "version": "1.0.2",
   "description": "NestJS分布式锁组件，基于PostgreSQL原生pg_advisory_lock",
-  "main": "dist/index.js",
-  "types": "dist/index.d.ts",
+  "main": "./dist/index.js",
+  "types": "./dist/index.d.ts",
+  "exports": {
+    ".": {
+      "import": "./dist/index.js",
+      "require": "./dist/index.js",
+      "types": "./dist/index.d.ts"
+    },
+    "./package.json": "./package.json"
+  },
   "scripts": {
     "build": "tsc",
     "test": "jest",
