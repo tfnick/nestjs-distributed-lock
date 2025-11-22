@@ -1,5 +1,8 @@
-import { Injectable, Inject, Logger } from '@nestjs/common';
+import { Injectable, Inject, Logger, Optional } from '@nestjs/common';
 import { DataSource } from 'typeorm';
+
+// TypeORM 0.3.0 中 getDataSourceToken 的简化实现
+const getDataSourceToken = (name?: string) => name ? `${name}DataSource` : DataSource;
 import { DistributedLockOptions, LockAcquireOptions } from './interfaces';
 import { DISTRIBUTED_LOCK_MODULE_OPTIONS, DEFAULT_TIMEOUT, DEFAULT_MAX_RETRIES, DEFAULT_RETRY_DELAY } from './distributed-lock.constants';
 import { LockAcquireTimeoutException, LockAlreadyHeldException, LockNotHeldException } from './exceptions';
