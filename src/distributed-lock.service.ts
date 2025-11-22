@@ -15,15 +15,19 @@ export class DistributedLockService {
   private readonly defaultTimeout: number;
   private readonly maxRetries: number;
   private readonly retryDelay: number;
+  private readonly dataSource: DataSource;
 
   constructor(
     @Inject(DISTRIBUTED_LOCK_MODULE_OPTIONS)
     private readonly options: DistributedLockOptions,
-    private readonly dataSource: DataSource,
+    private readonly defaultDataSource: DataSource,
   ) {
     this.defaultTimeout = options.defaultTimeout || DEFAULT_TIMEOUT;
     this.maxRetries = options.maxRetries || DEFAULT_MAX_RETRIES;
     this.retryDelay = options.retryDelay || DEFAULT_RETRY_DELAY;
+    
+    // 使用自定义数据源（支持代理数据源）或默认数据源
+    this.dataSource = options.dataSource || defaultDataSource;
   }
 
   /**

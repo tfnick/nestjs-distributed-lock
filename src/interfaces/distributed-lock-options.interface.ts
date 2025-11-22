@@ -1,8 +1,12 @@
 import { Type } from '@nestjs/common';
+import { DataSource } from 'typeorm';
 
 export interface DistributedLockOptions {
   /** PostgreSQL连接名称（用于连接多个数据库的情况） */
   connectionName?: string;
+  
+  /** 自定义数据源（用于支持代理数据源） */
+  dataSource?: DataSource;
   
   /** 默认锁超时时间（毫秒） */
   defaultTimeout?: number;
