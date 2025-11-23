@@ -4,6 +4,7 @@ import {
   ExecutionContext, 
   CallHandler,
   Inject,
+  Optional,
   Logger
 } from '@nestjs/common';
 import { Reflector } from '@nestjs/core';
@@ -22,9 +23,9 @@ export class DistributedLockInterceptor implements NestInterceptor {
   private readonly logger = new Logger(DistributedLockInterceptor.name);
 
   constructor(
-    private readonly reflector: Reflector,
     @Inject(DistributedLockService)
     private readonly lockService: DistributedLockService,
+    @Optional() private readonly reflector?: Reflector,
   ) {}
 
   async intercept(context: ExecutionContext, next: CallHandler): Promise<Observable<any>> {
@@ -66,6 +67,10 @@ export class DistributedLockInterceptor implements NestInterceptor {
   }
 
   private getLockOptions(context: ExecutionContext): ExtendedLockOptions | null {
+    if (!this.reflector) {
+      return null; // 如果没有Reflector，无法获取装饰器信息
+    }
+    
     return this.reflector.get<ExtendedLockOptions>(
       LOCK_METADATA_KEY,
       context.getHandler(),

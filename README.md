@@ -349,10 +349,10 @@ DistributedLockModule.forRootAsync({
 // ❌ 错误：Nest can't resolve dependencies of DistributedLockInterceptor
 // Error: Reflector at index [0] is available in the DistributedLockModule context
 
-// ✅ 解决方案：确保正确导入配置
-// Reflector会由NestJS自动提供，无需手动导入
+// ✅ 解决方案1：Reflector现在是可选依赖
+// 拦截器会优雅地处理Reflector不存在的情况
 DistributedLockModule.forRootAsync({
-  imports: [TypeOrmModule], // 只需要导入你需要的模块
+  imports: [TypeOrmModule],
   inject: [DataSource],
   useFactory: async (dataSource: DataSource) => ({
     dataSource,
@@ -361,9 +361,38 @@ DistributedLockModule.forRootAsync({
     retryDelay: 1000,
   }),
 });
+
+// ✅ 解决方案2：如果你的应用需要装饰器功能
+// 确保在应用的主模块中导入了Reflector
+import { Reflector } from '@nestjs/core';
+
+@Module({
+  providers: [Reflector], // 在根模块中提供Reflector
+})
+export class AppModule {}
 ```
 
-#### 5. 锁冲突
+#### 5. 锁释放问题
+```typescript
+// ❌ 问题：release ignored, lock not held
+// 可能原因：事务结束自动释放、连接被释放等
+
+// ✅ 解决方案1：使用withLock（推荐）
+await lockService.withLock('resource-key', async () => {
+  // 自动管理锁的获取和释放
+  await criticalOperation();
+});
+
+// ✅ 解决方案2：正确的手动方式
+const lock = await lockService.acquire('resource-key', { wait: true });
+try {
+  await criticalOperation();
+} finally {
+  await lock.release(); // 确保释放
+}
+```
+
+#### 6. 锁冲突
 ```typescript
 // ❌ 可能造成死锁
 await lock1.acquire('resource'); // 进程A

@@ -1,4 +1,5 @@
 import { DynamicModule, Module, Provider } from '@nestjs/common';
+import { Reflector } from '@nestjs/core';
 import { DataSource } from 'typeorm';
 import { DistributedLockService } from './distributed-lock.service';
 import { DistributedLockInterceptor } from './interceptors';

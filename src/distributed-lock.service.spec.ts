@@ -120,13 +120,12 @@ describe('DistributedLockService', () => {
       expect(dataSourceMock.query).toHaveBeenCalled();
     });
 
-    it('should handle release errors', async () => {
+    it('should handle release errors gracefully', async () => {
       const error = new Error('Release error');
       (dataSourceMock.query as jest.Mock).mockRejectedValue(error);
-
-      await expect(service.release('test-key'))
-        .rejects
-        .toThrow(); // 只验证抛出异常
+      
+      // release方法现在优雅处理错误，不抛出异常
+      await expect(service.release('test-key')).resolves.toBeUndefined();
     });
   });
 
