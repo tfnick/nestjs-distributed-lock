@@ -19,6 +19,17 @@ export interface LockHandle {
   release: () => Promise<void>;
 }
 
+export interface LockAcquireResult {
+  /** 是否成功获取锁 */
+  acquired: boolean;
+  /** 锁句柄（仅在acquired=true时有效） */
+  lock?: LockHandle;
+  /** 错误信息（仅在acquired=false时有效） */
+  error?: Error;
+  /** 失败原因 */
+  reason?: 'timeout' | 'held' | 'unknown';
+}
+
 @Injectable()
 export class DistributedLockService {
   private readonly logger = new Logger(DistributedLockService.name);
@@ -43,7 +54,7 @@ export class DistributedLockService {
     this.dataSource = options.dataSource || defaultDataSource!;
   }
 
-  async acquire(key: string, options: LockAcquireOptions = {}): Promise<LockHandle> {
+  async acquire(key: string, options: LockAcquireOptions = {}): Promise<LockAcquireResult> {
     const {
       timeout = this.defaultTimeout,
       wait = true,
@@ -62,13 +73,20 @@ export class DistributedLockService {
           this.logger.debug(`acquire lock success: ${lockKey} original key: ${key}`);
 
           return {
-            key,
-            release: () => this.releaseWithRunner(key, lockKey, queryRunner),
+            acquired: true,
+            lock: {
+              key,
+              release: () => this.releaseWithRunner(key, lockKey, queryRunner),
+            },
           };
         }
 
         if (!wait) {
-          throw new LockAlreadyHeldException(key);
+          return {
+            acquired: false,
+            reason: 'held',
+            error: new Error(`Lock ${key} is already held`),
+          };
         }
 
         if (attempt < maxRetries) {
@@ -79,14 +97,24 @@ export class DistributedLockService {
         }
       } catch (error) {
         if (attempt === maxRetries) {
-          throw new LockAcquireTimeoutException(key, timeout);
+          this.logger.debug(`acquire lock timeout: ${key} after ${maxRetries} attempts`);
+          return {
+            acquired: false,
+            reason: 'timeout',
+            error: new Error(`Lock ${key} acquisition timeout after ${timeout}ms`),
+          };
         }
 
         await this.sleep(retryDelay);
       }
     }
 
-    throw new LockAcquireTimeoutException(key, timeout);
+    // 理论上不会到达这里，但作为兜底
+    return {
+      acquired: false,
+      reason: 'unknown',
+      error: new Error(`Lock ${key} acquisition failed`),
+    };
   }
 
   private async tryAcquireLock(
@@ -190,12 +218,16 @@ export class DistributedLockService {
       fn: () => Promise<T>,
       options: LockAcquireOptions = {},
   ): Promise<T> {
-    const lock = await this.acquire(key, options);
+    const result = await this.acquire(key, options);
+
+    if (!result.acquired) {
+      throw result.error || new Error(`Failed to acquire lock: ${key}`);
+    }
 
     try {
       return await fn();
     } finally {
-      await lock.release().catch((e) => {
+      await result.lock.release().catch((e) => {
         this.logger.error(`释放锁失败 ${key}`, e);
       });
     }
@@ -228,5 +260,49 @@ export class DistributedLockService {
 
   private sleep(ms: number): Promise<void> {
     return new Promise((resolve) => setTimeout(resolve, ms));
+  }
+
+  /**
+   * 基于结果的锁执行方法（不抛出异常）
+   */
+  async withLockResult<T>(
+      key: string,
+      fn: () => Promise<T>,
+      options: LockAcquireOptions = {},
+  ): Promise<{ success: boolean; result?: T; error?: Error }> {
+    const acquireResult = await this.acquire(key, options);
+
+    if (!acquireResult.acquired) {
+      return {
+        success: false,
+        error: acquireResult.error,
+      };
+    }
+
+    try {
+      const result = await fn();
+      return {
+        success: true,
+        result,
+      };
+    } finally {
+      await acquireResult.lock.release().catch((e) => {
+        this.logger.error(`释放锁失败 ${key}`, e);
+      });
+    }
+  }
+
+  /**
+   * 向后兼容的锁获取方法（保持原有异常行为）
+   * @deprecated 使用 acquireLockResult 方法替代
+   */
+  async acquireLock(key: string, options: LockAcquireOptions = {}): Promise<LockHandle> {
+    const result = await this.acquire(key, options);
+    
+    if (!result.acquired) {
+      throw result.error || new Error(`Failed to acquire lock: ${key}`);
+    }
+    
+    return result.lock!;
   }
 }

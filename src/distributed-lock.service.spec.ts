@@ -49,11 +49,13 @@ describe('DistributedLockService', () => {
 
       (dataSourceMock.createQueryRunner as jest.Mock).mockReturnValue(queryRunnerMock);
 
-      const lock = await service.acquire('test-key');
+      const result = await service.acquire('test-key');
 
-      expect(lock).toBeDefined();
-      expect(lock.key).toBe('test-key');
-      expect(typeof lock.release).toBe('function');
+      expect(result).toBeDefined();
+      expect(result.acquired).toBe(true);
+      expect(result.lock).toBeDefined();
+      expect(result.lock.key).toBe('test-key');
+      expect(typeof result.lock.release).toBe('function');
       expect(queryRunnerMock.connect).toHaveBeenCalled();
       expect(queryRunnerMock.query).toHaveBeenCalled();
     });
@@ -67,9 +69,11 @@ describe('DistributedLockService', () => {
 
       (dataSourceMock.createQueryRunner as jest.Mock).mockReturnValue(queryRunnerMock);
 
-      const lock = await service.acquire('test-key', { wait: false });
+      const result = await service.acquire('test-key', { wait: false });
 
-      expect(lock).toBeDefined();
+      expect(result).toBeDefined();
+      expect(result.acquired).toBe(true);
+      expect(result.lock).toBeDefined();
       expect(queryRunnerMock.query).toHaveBeenCalled();
       expect(queryRunnerMock.release).toHaveBeenCalled(); // 非等待模式应该释放连接
     });
@@ -272,6 +276,61 @@ describe('DistributedLockService', () => {
 
       expect(serviceWithConfig).toBeDefined();
       await moduleWithConfig.close();
+    });
+  });
+
+  // 新增：新的acquire方法测试
+  describe('acquireLockResult', () => {
+    it('should return success result when lock is available', async () => {
+      const queryRunnerMock = {
+        connect: jest.fn().mockResolvedValue(undefined),
+        query: jest.fn().mockResolvedValue(undefined),
+        release: jest.fn().mockResolvedValueOnce(undefined),
+      };
+
+      (dataSourceMock.createQueryRunner as jest.Mock).mockReturnValue(queryRunnerMock);
+
+      const result = await service.acquire('test-key');
+
+      expect(result.acquired).toBe(true);
+      expect(result.lock).toBeDefined();
+      expect(result.lock.key).toBe('test-key');
+      expect(result.error).toBeUndefined();
+      expect(result.reason).toBeUndefined();
+    });
+
+    it('should return failure result when lock is not available', async () => {
+      const queryRunnerMock = {
+        connect: jest.fn().mockResolvedValue(undefined),
+        query: jest.fn().mockResolvedValue([{ locked: false }]),
+        release: jest.fn().mockResolvedValueOnce(undefined),
+      };
+
+      (dataSourceMock.createQueryRunner as jest.Mock).mockReturnValue(queryRunnerMock);
+
+      const result = await service.acquire('test-key', { wait: false });
+
+      expect(result.acquired).toBe(false);
+      expect(result.lock).toBeUndefined();
+      expect(result.error).toBeDefined();
+      expect(result.reason).toBe('held');
+    });
+
+    it('should return timeout result after max retries', async () => {
+      const queryRunnerMock = {
+        connect: jest.fn().mockResolvedValue(undefined),
+        query: jest.fn().mockRejectedValue(new Error('Connection timeout')),
+        release: jest.fn().mockResolvedValue(undefined),
+      };
+
+      (dataSourceMock.createQueryRunner as jest.Mock).mockReturnValue(queryRunnerMock);
+
+      const result = await service.acquire('test-key', { maxRetries: 2 });
+
+      expect(result.acquired).toBe(false);
+      expect(result.lock).toBeUndefined();
+      expect(result.error).toBeDefined();
+      expect(result.reason).toBe('timeout');
     });
   });
 });

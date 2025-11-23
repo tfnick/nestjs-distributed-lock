@@ -111,13 +111,69 @@ export class UserService {
 
   async deleteUser(id: string) {
     // 方式二：手动控制锁
-    const lock = await this.lockService.acquire(`user:${id}`);
+    const lock = await this.lockService.acquireLock(`user:${id}`);
     
     try {
       // 关键操作
       await this.performDeletion(id);
     } finally {
       await lock.release(); // 确保锁被释放
+    }
+  }
+}
+```
+
+### 新的API：结果驱动的锁获取
+
+```typescript
+@Injectable()
+export class OrderService {
+  constructor(private readonly lockService: DistributedLockService) {}
+
+  async processPayment(orderId: string, paymentId: string) {
+    const lockKey = `order:${orderId}:payment:${paymentId}`;
+    
+    // 方式一：结果驱动（不抛出异常）
+    const result = await this.lockService.acquire(lockKey);
+    
+    if (result.acquired) {
+      try {
+        console.log('锁获取成功，执行业务逻辑');
+        await this.processPaymentLogic();
+      } finally {
+        await result.lock.release();
+      }
+    } else {
+      // 根据原因处理失败情况
+      switch (result.reason) {
+        case 'held':
+          console.log('锁已被占用，稍后重试');
+          await this.scheduleRetry();
+          break;
+        case 'timeout':
+          console.log('锁获取超时，处理超时逻辑');
+          await this.handleTimeout();
+          break;
+        default:
+          console.log('未知错误：', result.error?.message);
+          break;
+      }
+    }
+  }
+
+  // 方式二：结果驱动的锁执行（推荐）
+  async processOrder(orderId: string) {
+    const result = await this.lockService.withLockResult(`order:${orderId}`, async () => {
+      console.log('执行订单处理逻辑');
+      return await this.processOrderLogic();
+    });
+
+    if (result.success) {
+      console.log('订单处理成功：', result.result);
+      return result.result;
+    } else {
+      console.log('锁获取失败：', result.error?.message);
+      throw result.error;
     }
   }
 }
@@ -151,6 +207,36 @@ export class UserController {
 | `defaultTimeout` | `number` | `30000` | 锁超时时间（毫秒） |
 | `maxRetries` | `number` | `3` | 最大重试次数 |
 | `retryDelay` | `number` | `1000` | 重试间隔（毫秒） |
+
+## 🔑 接口定义
+
+### LockAcquireResult
+```typescript
+interface LockAcquireResult {
+  /** 是否成功获取锁 */
+  acquired: boolean;
+  /** 锁句柄（仅在acquired=true时有效） */
+  lock?: LockHandle;
+  /** 错误信息（仅在acquired=false时有效） */
+  error?: Error;
+  /** 失败原因 */
+  reason?: 'timeout' | 'held' | 'unknown';
+}
+```
+
+### withLockResult
+```typescript
+// 返回类型：Promise<{ success: boolean; result?: T; error?: Error }>
+const result = await lockService.withLockResult('key', async () => {
+  return await businessLogic();
+});
+
+if (result.success) {
+  console.log('执行成功：', result.result);
+} else {
+  console.log('锁获取失败：', result.error?.message);
+}
+```
 
 ### 配置选项
 
