@@ -180,6 +180,32 @@ export class MyService {
 | `connectionName` | ✅ 配置简单<br>✅ 与 TypeORM 集成 | ❌ 不支持代理数据源 | 简单场景 |
 | 默认注入 | ✅ 最简单 | ❌ 不支持复杂场景 | 基础使用 |
 
+## 测试
+
+运行测试套件：
+
+```bash
+# 运行所有测试
+npm test
+
+# 运行特定测试文件
+npm test src/distributed-lock.service.spec.ts
+
+# 运行测试并生成覆盖率报告
+npm run test:cov
+
+# 监视模式
+npm run test:watch
+```
+
+测试覆盖内容：
+- ✅ 锁获取和释放
+- ✅ 锁重试机制
+- ✅ 超时处理
+- ✅ 配置选项验证
+- ✅ 模块集成测试
+- ✅ 异常处理
+
 ## 注意事项
 
 1. **依赖关系**：本模块依赖 `TypeOrmModule`，必须先配置好 TypeORM
@@ -210,5 +236,38 @@ rm -rf node_modules package-lock.json
 npm install
 ```
 
+### 测试失败
+**解决方案：**
+```bash
+# 检查测试配置
+npm test --verbose
+
+# 重新构建
+npm run build && npm test
+```
+
 ## 版本
-当前版本：1.0.9
+当前版本：1.2.0
+
+## 更新日志
+
+### v1.2.0
+- ✅ 添加完整的测试套件
+- ✅ 支持锁获取、释放、重试等核心功能测试
+- ✅ 模块集成测试
+- ✅ 配置接口测试
+- ✅ 异常处理测试
+
+### v1.1.0
+- ✅ 修复 connectionName 支持问题
+- ✅ 完善依赖注入机制
+- ✅ 支持事务性数据源
+
+### v1.0.8
+- ✅ 修复包发布配置
+- ✅ 添加 files 字段
+- ✅ 正确的导出路径
+
+### v1.0.5
+- ✅ 添加作者邮箱
+- ✅ 支持 ConfigService 异步配置

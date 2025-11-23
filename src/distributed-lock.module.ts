@@ -16,25 +16,30 @@ export class DistributedLockModule {
         provide: DISTRIBUTED_LOCK_MODULE_OPTIONS,
         useValue: options,
       },
-      // 如果指定了数据源，创建对应的 provider
-      ...(options.dataSource ? [{
-        provide: DataSource,
-        useValue: options.dataSource,
-      }] : []),
-      ...(options.connectionName ? [{
-        provide: getDataSourceToken(options.connectionName),
-        inject: [DataSource],
-        useFactory: (dataSource: DataSource) => dataSource,
-      }] : []),
       DistributedLockService,
       DistributedLockInterceptor,
     ];
+
+    // 如果没有提供自定义数据源，尝试注入默认数据源
+    if (!options.dataSource) {
+      providers.push({
+        provide: DataSource,
+        inject: [DataSource],
+        useFactory: (dataSource: DataSource) => dataSource,
+      });
+    } else {
+      // 使用提供的自定义数据源
+      providers.push({
+        provide: DataSource,
+        useValue: options.dataSource,
+      });
+    }
 
     return {
       module: DistributedLockModule,
       providers,
       exports: [DistributedLockService, DistributedLockInterceptor],
-      global: true, // 设置为全局模块，方便使用
+      global: true,
     };
   }
 
@@ -43,15 +48,6 @@ export class DistributedLockModule {
     
     const providers: Provider[] = [
       asyncOptionsProvider,
-      // 动态创建数据源 provider
-      {
-        provide: DataSource,
-        inject: [DISTRIBUTED_LOCK_MODULE_OPTIONS],
-        useFactory: (moduleOptions: DistributedLockOptions) => {
-          // 这里需要等待异步配置完成后处理
-          return moduleOptions.dataSource || null;
-        },
-      },
       DistributedLockService,
       DistributedLockInterceptor,
     ];
