@@ -208,11 +208,10 @@ describe('DistributedLockService', () => {
       } as any;
 
       const moduleWithoutConfig = await Test.createTestingModule({
-        imports: [DistributedLockModule.forRoot()],
-      })
-      .overrideProvider(DataSource)
-      .useValue(mockDataSource)
-      .compile();
+        imports: [DistributedLockModule.forRoot({
+          dataSource: mockDataSource, // 提供数据源
+        })],
+      }).compile();
 
       const serviceWithoutConfig = moduleWithoutConfig.get<DistributedLockService>(DistributedLockService);
 
@@ -229,14 +228,12 @@ describe('DistributedLockService', () => {
 
       const moduleWithConfig = await Test.createTestingModule({
         imports: [DistributedLockModule.forRoot({
+          dataSource: mockDataSource,
           defaultTimeout: 10000,
           maxRetries: 5,
           retryDelay: 500,
         })],
-      })
-      .overrideProvider(DataSource)
-      .useValue(mockDataSource)
-      .compile();
+      }).compile();
 
       const serviceWithConfig = moduleWithConfig.get<DistributedLockService>(DistributedLockService);
 

@@ -65,6 +65,29 @@ import { addTransactionalDataSource } from 'typeorm-transactional';
 export class AppModule {}
 ```
 
+或者直接注入TypeORM的DataSource：
+
+```typescript
+import { DistributedLockModule } from '@tfnick/nestjs-distributed-lock';
+import { DataSource } from 'typeorm';
+
+@Module({
+  imports: [
+    DistributedLockModule.forRootAsync({
+      imports: [TypeOrmModule],
+      inject: [DataSource],
+      useFactory: async (dataSource: DataSource) => ({
+        dataSource,              // 使用 TypeORM 最终提供的 DataSource（已代理）
+        defaultTimeout: 30000,
+        maxRetries: 3,
+        retryDelay: 1000,
+      }),
+    }),
+  ],
+})
+export class AppModule {}
+```
+
 ## 📖 API 使用
 
 ### 在服务中注入
@@ -104,7 +127,7 @@ export class UserService {
 
 ```typescript
 import { Controller, Post } from '@nestjs/common';
-import { DistributedLock } from '@tfnick/nestjs-distributed-lock';
+import { Lock } from '@tfnick/nestjs-distributed-lock';
 import { UserService } from './user.service';
 
 @Controller('users')
@@ -112,7 +135,7 @@ export class UserController {
   constructor(private readonly userService: UserService) {}
 
   @Post(':id/lock')
-  @DistributedLock('user-lock-{id}') // 自动锁获取和释放
+  @Lock('user-lock-{id}') // 自动锁获取和释放
   async lockUser(id: string) {
     return this.userService.updateUser(id, { locked: true });
   }
@@ -215,7 +238,7 @@ DistributedLockModule.forRoot({
 export class OrderService {
   constructor(private readonly lockService: DistributedLockService) {}
 
-  @DistributedLock('order-processing') // 方法级锁
+  @Lock('order-processing') // 方法级锁
   async processOrder(orderId: string) {
     // 装饰器自动处理锁，但也可以使用服务
     const orderLock = await this.lockService.acquire(`order-detail:${orderId}`);
@@ -264,6 +287,7 @@ export class OrderService {
 - 🔗 **TypeORM依赖**: 必须先配置 `TypeOrmModule`
 - 📦 **PostgreSQL**: 仅支持PostgreSQL数据库（使用advisory locks）
 - 🔐 **数据库权限**: 确保用户有执行 `pg_advisory_*` 函数的权限
+- 🔄 **版本兼容**: 支持不同TypeORM版本，避免类型冲突
 
 ### 最佳实践
 - 🎯 **锁命名**: 使用有意义的命名空间，如 `user:{id}`, `order:{id}`
@@ -296,7 +320,50 @@ const dataSource = addTransactionalDataSource(new DataSource(options));
 DistributedLockModule.forRoot({ dataSource });
 ```
 
-#### 3. 锁冲突
+#### 3. TypeORM版本冲突
+```typescript
+// ❌ 类型不兼容错误（多个TypeORM版本）
+// 'DataSourceOptions' 类型不兼容
+
+// ✅ 解决方案1：使用any类型
+DistributedLockModule.forRootAsync({
+  inject: [DataSource],
+  useFactory: async (dataSource: any) => ({
+    dataSource,
+    defaultTimeout: 30000,
+  }),
+});
+
+// ✅ 解决方案2：使用类型断言
+DistributedLockModule.forRootAsync({
+  inject: [DataSource],
+  useFactory: async (dataSource: DataSource) => ({
+    dataSource: dataSource as any,
+    defaultTimeout: 30000,
+  }),
+});
+```
+
+#### 4. Reflector依赖问题
+```typescript
+// ❌ 错误：Nest can't resolve dependencies of DistributedLockInterceptor
+// Error: Reflector at index [0] is available in the DistributedLockModule context
+
+// ✅ 解决方案：确保正确导入配置
+// Reflector会由NestJS自动提供，无需手动导入
+DistributedLockModule.forRootAsync({
+  imports: [TypeOrmModule], // 只需要导入你需要的模块
+  inject: [DataSource],
+  useFactory: async (dataSource: DataSource) => ({
+    dataSource,
+    defaultTimeout: 30000,
+    maxRetries: 3,
+    retryDelay: 1000,
+  }),
+});
+```
+
+#### 5. 锁冲突
 ```typescript
 // ❌ 可能造成死锁
 await lock1.acquire('resource'); // 进程A

@@ -1,7 +1,7 @@
 import { Injectable, Inject, Optional, Logger } from '@nestjs/common';
 import { DataSource } from 'typeorm';
 
-import { DistributedLockOptions, LockAcquireOptions } from './interfaces';
+import { DistributedLockOptions, LockAcquireOptions, AnyDataSource } from './interfaces';
 import {
   DISTRIBUTED_LOCK_MODULE_OPTIONS,
   DEFAULT_TIMEOUT,
@@ -25,18 +25,21 @@ export class DistributedLockService {
   private readonly defaultTimeout: number;
   private readonly maxRetries: number;
   private readonly retryDelay: number;
-  private readonly dataSource: DataSource;
+  private readonly dataSource: AnyDataSource;
 
   constructor(
     @Inject(DISTRIBUTED_LOCK_MODULE_OPTIONS)
     private readonly options: DistributedLockOptions,
-    @Optional() @Inject(DataSource) private readonly defaultDataSource?: DataSource,
+    @Optional() @Inject(DataSource) private readonly defaultDataSource?: AnyDataSource,
   ) {
     this.defaultTimeout = options.defaultTimeout ?? DEFAULT_TIMEOUT;
     this.maxRetries = options.maxRetries ?? DEFAULT_MAX_RETRIES;
     this.retryDelay = options.retryDelay ?? DEFAULT_RETRY_DELAY;
     
     // 使用自定义数据源（支持代理数据源）或默认数据源
+    if (!options.dataSource && !defaultDataSource) {
+      throw new Error('DataSource is required. Please either provide a dataSource option or ensure TypeORM DataSource is available.');
+    }
     this.dataSource = options.dataSource || defaultDataSource!;
   }
 

@@ -6,6 +6,7 @@ import {
   DistributedLockOptions,
   DistributedLockAsyncOptions,
   DistributedLockOptionsFactory,
+  AnyDataSource,
 } from './interfaces';
 import { DISTRIBUTED_LOCK_MODULE_OPTIONS } from './distributed-lock.constants';
 
@@ -30,11 +31,7 @@ export class DistributedLockModule {
       ...(options.dataSource ? [{
         provide: DataSource,
         useValue: options.dataSource,
-      }] : [{
-        provide: DataSource,
-        inject: [DataSource],
-        useFactory: (dataSource: DataSource) => dataSource,
-      }]),
+      }] : []),
       DistributedLockService,
       DistributedLockInterceptor,
     ];
