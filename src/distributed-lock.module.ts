@@ -1,5 +1,4 @@
 import { DynamicModule, Module, Provider, Type } from '@nestjs/common';
-import { DataSource } from 'typeorm';
 import { DistributedLockService } from './distributed-lock.service';
 import { DistributedLockInterceptor } from './interceptors';
 import {
@@ -21,14 +20,6 @@ export class DistributedLockModule {
       DistributedLockInterceptor,
     ];
 
-    // ⬅ 重要：若提供 dataSource，则覆盖 DataSource provider
-    if (options.dataSource) {
-      providers.push({
-        provide: DataSource,
-        useValue: options.dataSource,
-      });
-    }
-
     return {
       module: DistributedLockModule,
       providers,
@@ -40,18 +31,14 @@ export class DistributedLockModule {
   static forRootAsync(options: DistributedLockAsyncOptions): DynamicModule {
     const asyncOptionsProvider = this.createAsyncOptionsProvider(options);
 
-    const providers: Provider[] = [
-      asyncOptionsProvider,
-      // ⬅ 新增一个 "动态 DataSource provider"
-      this.createAsyncDataSourceProvider(),
-      DistributedLockService,
-      DistributedLockInterceptor,
-    ];
-
     return {
       module: DistributedLockModule,
-      imports: options.imports || [],
-      providers,
+      imports: options.imports || [],          // 可以为空
+      providers: [
+        asyncOptionsProvider,                 // 只创建 options，不依赖 service
+        DistributedLockService,
+        DistributedLockInterceptor,
+      ],
       exports: [DistributedLockService, DistributedLockInterceptor],
       global: true,
     };
@@ -77,23 +64,6 @@ export class DistributedLockModule {
       useFactory: async (optionsFactory: DistributedLockOptionsFactory) =>
           await optionsFactory.createDistributedLockOptions(),
       inject,
-    };
-  }
-
-  // ⬅ 新增：根据 async options 生成 DataSource provider
-  private static createAsyncDataSourceProvider(): Provider {
-    return {
-      provide: DataSource,
-      inject: [DISTRIBUTED_LOCK_MODULE_OPTIONS],
-      useFactory: (options: DistributedLockOptions) => {
-        // 如果 useFactory 返回了 dataSource，则提供它
-        if (options?.dataSource) {
-          return options.dataSource;
-        }
-        // 否则由 Nest 去注入默认 DataSource（TypeORM Module）
-        // 返回 undefined 让 Nest 注入默认 DataSource
-        return undefined;
-      },
     };
   }
 }
