@@ -1,4 +1,4 @@
-import { Type } from '@nestjs/common';
+import {ModuleMetadata, Type} from '@nestjs/common';
 import { DataSource } from 'typeorm';
 
 export interface DistributedLockOptions {
@@ -22,10 +22,12 @@ export interface DistributedLockOptionsFactory {
   createDistributedLockOptions(): Promise<DistributedLockOptions> | DistributedLockOptions;
 }
 
-export interface DistributedLockAsyncOptions {
+export interface DistributedLockAsyncOptions
+    extends Pick<ModuleMetadata, 'imports'> {
+  inject?: any[];
   useExisting?: Type<DistributedLockOptionsFactory>;
   useClass?: Type<DistributedLockOptionsFactory>;
-  useFactory?: (...args: any[]) => Promise<DistributedLockOptions> | DistributedLockOptions;
-  inject?: any[];
-  imports?: any[];
+  useFactory?: (
+      ...args: any[]
+  ) => Promise<DistributedLockOptions> | DistributedLockOptions;
 }

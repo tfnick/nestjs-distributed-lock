@@ -1,6 +1,6 @@
 {
   "name": "@tfnick/nestjs-distributed-lock",
-  "version": "1.2.3",
+  "version": "1.2.4",
   "description": "NestJS分布式锁组件，基于PostgreSQL原生pg_advisory_lock",
   "main": "./dist/index.js",
   "types": "./dist/index.d.ts",
@@ -20,6 +20,10 @@
     "test": "jest",
     "test:watch": "jest --watch",
     "test:cov": "jest --coverage",
+    "test:examples": "jest --configPath=test/examples.config.js",
+    "test:unit": "jest --testPathPattern=src/.*\\.spec\\.ts$",
+    "test:integration": "jest --testPathPattern=test/integration\\.spec\\.ts$",
+    "test:performance": "jest --testPathPattern=test/performance\\.spec\\.ts$",
     "lint": "eslint src/**/*.ts",
     "format": "prettier --write src/**/*.ts"
   },
@@ -29,7 +33,6 @@
   "dependencies": {
     "@nestjs/common": "^10.0.0",
     "@nestjs/core": "^10.0.0",
-    "typeorm": "^0.3.27",
     "pg": "^8.11.0"
   },
   "devDependencies": {
@@ -41,12 +44,12 @@
     "eslint": "^8.0.0",
     "jest": "^29.0.0",
     "prettier": "^3.0.0",
-    "ts-jest": "^29.0.0",
-    "typescript": "^5.0.0"
+    "ts-jest": "^29.0.0"
   },
   "peerDependencies": {
     "@nestjs/common": "^10.0.0",
     "@nestjs/core": "^10.0.0",
-    "typeorm": "^0.3.0"
+    "typeorm": "^0.3.27",
+    "typescript": "^5.0.0"
   }
 }

@@ -8,118 +8,126 @@ NestJS分布式锁组件，基于PostgreSQL原生pg_advisory_lock
 npm install @tfnick/nestjs-distributed-lock
 ```
 
-## 使用方法
+## 🚀 快速开始
 
-### 基础配置
+### 方式一：自动使用TypeORM连接（推荐）
 
 ```typescript
 import { DistributedLockModule } from '@tfnick/nestjs-distributed-lock';
 
 @Module({
   imports: [
-    DistributedLockModule.forRoot({
-      defaultTimeout: 30000,
-      maxRetries: 3,
-      retryDelay: 1000,
-    })
-  ]
-})
-export class AppModule {}
-```
-
-### 支持事务性数据源（推荐）
-
-如果业务侧使用了 `addTransactionalDataSource` 创建代理数据源：
-
-```typescript
-import { DistributedLockModule } from '@tfnick/nestjs-distributed-lock';
-
-// 方法一：直接传入代理数据源
-const dataSource = addTransactionalDataSource(new DataSource(options));
-
-DistributedLockModule.forRootAsync({
-  imports: [ConfigModule],
-  inject: [ConfigService],
-  useFactory: (config: ConfigService) => {
-    const dbConfig = config.get('db.postgres');
-    const dataSource = new DataSource(dbConfig);
-    const transactionalDataSource = addTransactionalDataSource(dataSource);
-    
-    return {
-      dataSource: transactionalDataSource, // 传入代理数据源
-      defaultTimeout: 30000,
-      maxRetries: 3,
-      retryDelay: 1000,
-    };
-  },
-})
-```
-
-### 使用连接名称
-
-```typescript
-// 方法二：使用连接名称
-DistributedLockModule.forRoot({
-  connectionName: 'default', // 使用默认 TypeORM 连接
-  defaultTimeout: 30000,
-  maxRetries: 3,
-  retryDelay: 1000,
-})
-```
-
-### 与 TypeORM 事务性数据源配合使用
-
-```typescript
-import { Module } from '@nestjs/common';
-import { TypeOrmModule } from '@nestjs/typeorm';
-import { ConfigModule, ConfigService } from '@nestjs/config';
-import { DistributedLockModule } from '@tfnick/nestjs-distributed-lock';
-import { addTransactionalDataSource } from 'typeorm-transactional';
-import { DataSource } from 'typeorm';
-
-@Module({
-  imports: [
-    ConfigModule.forRoot({
-      // ... 配置
+    // 你的 TypeORM 配置
+    TypeOrmModule.forRoot({
+      type: 'postgres',
+      host: 'localhost',
+      port: 5432,
+      // ...
     }),
     
-    // 1. TypeORM 配置（使用事务性数据源）
-    TypeOrmModule.forRootAsync({
-      imports: [ConfigModule],
-      inject: [ConfigService],
-      async dataSourceFactory(options) {
-        if (!options) {
-          throw new Error('Invalid options passed');
-        }
-        return addTransactionalDataSource(new DataSource(options));
-      },
-      useFactory: (config: ConfigService) => {
-        const dbConfig = config.get('db.postgres');
-        return {
-          logging: ['query', 'error', 'schema', 'warn', 'info'],
-          logger: true,
-          type: dbConfig.type || 'postgres',
-          entities: [`${__dirname}/**/*.entity{.ts,.js}`, `${__dirname}/**/*.event{.ts,.js}`],
-          autoLoadEntities: true,
-          keepConnectionAlive: true,
-          timezone: '+08:00',
-          ...dbConfig,
-          migrationsRun: false,
-        } as TypeOrmModuleOptions;
-      },
-    }),
-    
-    // 2. 分布式锁配置（使用连接名称）
+    // 分布式锁配置（自动使用TypeORM数据源）
     DistributedLockModule.forRoot({
-      connectionName: 'default', // 使用同一个 TypeORM 连接
-      defaultTimeout: 30000,
-      maxRetries: 3,
-      retryDelay: 1000,
+      defaultTimeout: 30000,  // 30秒超时
+      maxRetries: 3,          // 最多重试3次
+      retryDelay: 1000,        // 重试间隔1秒
     }),
   ],
 })
 export class AppModule {}
 ```
+
+### 方式二：自定义数据源
+
+如果需要使用事务性数据源：
+
+```typescript
+import { DistributedLockModule } from '@tfnick/nestjs-distributed-lock';
+import { addTransactionalDataSource } from 'typeorm-transactional';
+
+@Module({
+  imports: [
+    DistributedLockModule.forRootAsync({
+      imports: [ConfigModule],
+      inject: [ConfigService],
+      useFactory: (config: ConfigService) => {
+        const dataSource = addTransactionalDataSource(new DataSource(config.get('database')));
+        
+        return {
+          dataSource,              // 传入自定义数据源
+          defaultTimeout: 30000,
+          maxRetries: 3,
+          retryDelay: 1000,
+        };
+      },
+    }),
+  ],
+})
+export class AppModule {}
+```
+
+## 📖 API 使用
+
+### 在服务中注入
+
+```typescript
+import { Injectable } from '@nestjs/common';
+import { DistributedLockService } from '@tfnick/nestjs-distributed-lock';
+
+@Injectable()
+export class UserService {
+  constructor(private readonly lockService: DistributedLockService) {}
+
+  async updateUser(id: string, data: any) {
+    // 方式一：自动管理锁（推荐）
+    await this.lockService.withLock(`user:${id}`, async () => {
+      // 临界区代码 - 自动获取和释放锁
+      console.log('正在更新用户数据...');
+      // ... 更新逻辑
+    });
+  }
+
+  async deleteUser(id: string) {
+    // 方式二：手动控制锁
+    const lock = await this.lockService.acquire(`user:${id}`);
+    
+    try {
+      // 关键操作
+      await this.performDeletion(id);
+    } finally {
+      await lock.release(); // 确保锁被释放
+    }
+  }
+}
+```
+
+### 在控制器中使用装饰器
+
+```typescript
+import { Controller, Post } from '@nestjs/common';
+import { DistributedLock } from '@tfnick/nestjs-distributed-lock';
+import { UserService } from './user.service';
+
+@Controller('users')
+export class UserController {
+  constructor(private readonly userService: UserService) {}
+
+  @Post(':id/lock')
+  @DistributedLock('user-lock-{id}') // 自动锁获取和释放
+  async lockUser(id: string) {
+    return this.userService.updateUser(id, { locked: true });
+  }
+}
+```
+
+## ⚙️ 配置选项
+
+| 选项 | 类型 | 默认值 | 说明 |
+|------|------|--------|------|
+| `dataSource` | `DataSource` | - | 自定义数据源（支持事务性数据源） |
+| `connectionName` | `string` | - | TypeORM连接名称 |
+| `defaultTimeout` | `number` | `30000` | 锁超时时间（毫秒） |
+| `maxRetries` | `number` | `3` | 最大重试次数 |
+| `retryDelay` | `number` | `1000` | 重试间隔（毫秒） |
 
 ### 配置选项
 
@@ -142,109 +150,184 @@ interface DistributedLockOptions {
 }
 ```
 
-### 使用服务
+## 🧪 测试
 
-```typescript
-import { DistributedLockService } from '@tfnick/nestjs-distributed-lock';
-
-@Injectable()
-export class MyService {
-  constructor(private readonly lockService: DistributedLockService) {}
-  
-  async doSomething() {
-    // 使用锁执行代码
-    await this.lockService.withLock('my-lock-key', async () => {
-      // 临界区代码
-      console.log('正在执行关键操作...');
-    });
-  }
-  
-  // 手动控制锁
-  async criticalOperation() {
-    const lock = await this.lockService.acquire('critical-section');
-    
-    try {
-      // 执行关键操作
-    } finally {
-      await lock.release();
-    }
-  }
-}
-```
-
-## 配置方式对比
-
-| 方式 | 优点 | 缺点 | 适用场景 |
-|------|------|------|----------|
-| `dataSource` 选项 | ✅ 直接支持代理数据源<br>✅ 配置简单 | ❌ 需要手动创建数据源 | 推荐方式，支持事务 |
-| `connectionName` | ✅ 配置简单<br>✅ 与 TypeORM 集成 | ❌ 不支持代理数据源 | 简单场景 |
-| 默认注入 | ✅ 最简单 | ❌ 不支持复杂场景 | 基础使用 |
-
-## 测试
-
-运行测试套件：
+### 运行测试
 
 ```bash
 # 运行所有测试
 npm test
 
-# 运行特定测试文件
-npm test src/distributed-lock.service.spec.ts
-
-# 运行测试并生成覆盖率报告
+# 运行测试并生成覆盖率
 npm run test:cov
 
-# 监视模式
+# 监视模式（开发时使用）
 npm run test:watch
 ```
 
-测试覆盖内容：
-- ✅ 锁获取和释放
-- ✅ 锁重试机制
-- ✅ 超时处理
-- ✅ 配置选项验证
-- ✅ 模块集成测试
-- ✅ 异常处理
+### 测试覆盖
 
-## 注意事项
+✅ **核心功能测试**
+- 锁获取和释放
+- 非阻塞锁模式
+- 重试机制
+- 超时处理
 
-1. **依赖关系**：本模块依赖 `TypeOrmModule`，必须先配置好 TypeORM
-2. **事务性数据源**：如果使用了 `addTransactionalDataSource`，建议通过 `dataSource` 选项传入
-3. **连接名称**：使用 `connectionName` 时，确保 TypeORM 中有对应的命名连接
-4. **数据库权限**：确保数据库用户有执行 `pg_advisory_lock` 等函数的权限
+✅ **集成测试**
+- 模块配置
+- 数据源注入
+- 异步配置
 
-## 故障排除
+✅ **边界测试**
+- 异常处理
+- 锁状态查询
+- 键生成算法
 
-### 错误：DataSource provider not found
-```
-Potential solutions:
-- Is DistributedLockModule a valid NestJS module?
-- If DataSource is a provider, is it part of the current DistributedLockModule?
-- If DataSource is exported from a separate @Module, is that module imported within DistributedLockModule?
-```
+## 🔧 高级用法
 
-**解决方案：**
-1. 确保使用正确的配置方式（推荐 `dataSource` 选项）
-2. 如果使用 `connectionName`，确保 TypeORM 配置正确
-3. 确保模块导入顺序正确
+### 检查锁状态
 
-### 错误：Cannot find module
-**解决方案：**
-```bash
-npm cache clean --force
-rm -rf node_modules package-lock.json
-npm install
+```typescript
+async checkLockStatus(key: string) {
+  const isLocked = await this.lockService.isLocked(key);
+  if (isLocked) {
+    console.log(`锁 ${key} 正被持有`);
+    return false;
+  }
+  return true;
+}
 ```
 
-### 测试失败
-**解决方案：**
-```bash
-# 检查测试配置
-npm test --verbose
+### 自定义重试策略
 
-# 重新构建
-npm run build && npm test
+```typescript
+DistributedLockModule.forRoot({
+  defaultTimeout: 60000,  // 1分钟超时
+  maxRetries: 10,          // 最多重试10次
+  retryDelay: 500,         // 重试间隔500ms
+})
 ```
+
+### 组合使用装饰器和服务
+
+```typescript
+@Injectable()
+export class OrderService {
+  constructor(private readonly lockService: DistributedLockService) {}
+
+  @DistributedLock('order-processing') // 方法级锁
+  async processOrder(orderId: string) {
+    // 装饰器自动处理锁，但也可以使用服务
+    const orderLock = await this.lockService.acquire(`order-detail:${orderId}`);
+    try {
+      await this.processOrderItems(orderId);
+    } finally {
+      await orderLock.release();
+    }
+  }
+}
+```
+
+## ⚡ 性能优化
+
+### 最佳实践
+
+1. **锁粒度**: 使用细粒度锁，避免死锁
+   ```typescript
+   // ❌ 粗粒度锁 - 可能造成死锁
+   await this.lockService.withLock('orders', async () => { ... });
+   
+   // ✅ 细粒度锁 - 更好的并发性
+   await this.lockService.withLock(`order:${orderId}`, async () => { ... });
+   ```
+
+2. **锁超时**: 根据业务逻辑设置合理的超时时间
+   ```typescript
+   // 短时操作
+   await this.lockService.withLock('cache-update', updateCache, { timeout: 5000 });
+   
+   // 长时操作
+   await this.lockService.withLock('report-generation', generateReport, { timeout: 300000 });
+   ```
+
+3. **重试策略**: 避免过度重试
+   ```typescript
+   DistributedLockModule.forRoot({
+     maxRetries: 3,      // 适度的重试次数
+     retryDelay: 1000,    // 合理的重试间隔
+   });
+   ```
+
+## ⚠️ 注意事项
+
+### 依赖关系
+- 🔗 **TypeORM依赖**: 必须先配置 `TypeOrmModule`
+- 📦 **PostgreSQL**: 仅支持PostgreSQL数据库（使用advisory locks）
+- 🔐 **数据库权限**: 确保用户有执行 `pg_advisory_*` 函数的权限
+
+### 最佳实践
+- 🎯 **锁命名**: 使用有意义的命名空间，如 `user:{id}`, `order:{id}`
+- ⏱️ **超时设置**: 根据业务复杂度设置合理超时时间
+- 🔄 **重试策略**: 避免过度重试，保护数据库性能
+
+## 🚨 故障排除
+
+### 常见问题
+
+#### 1. DataSource provider not found
+```typescript
+// ❌ 错误配置
+DistributedLockModule.forRoot(); // 没有TypeORM连接
+
+// ✅ 正确配置
+DistributedLockModule.forRoot({
+  defaultTimeout: 30000,
+}); // 会自动使用TypeORM的DataSource
+```
+
+#### 2. 自定义数据源问题
+```typescript
+// ❌ 直接使用原始数据源
+const dataSource = new DataSource(options);
+DistributedLockModule.forRoot({ dataSource });
+
+// ✅ 使用事务性数据源
+const dataSource = addTransactionalDataSource(new DataSource(options));
+DistributedLockModule.forRoot({ dataSource });
+```
+
+#### 3. 锁冲突
+```typescript
+// ❌ 可能造成死锁
+await lock1.acquire('resource'); // 进程A
+await lock2.acquire('resource'); // 进程B - 可能死锁
+
+// ✅ 使用有序锁获取
+await lock1.acquire('resource:step1');
+await lock2.acquire('resource:step2'); // 明确顺序
+```
+
+### 调试技巧
+
+1. **启用日志**:
+   ```typescript
+   DistributedLockModule.forRoot({
+     defaultTimeout: 30000,
+   });
+   // 查看日志输出中的锁操作信息
+   ```
+
+2. **测试连接**:
+   ```bash
+   # 测试PostgreSQL连接
+   psql -h localhost -U username -d database -c "SELECT pg_advisory_lock(1);"
+   ```
+
+3. **监控锁状态**:
+   ```sql
+   -- 查看当前持有的advisory locks
+   SELECT * FROM pg_locks WHERE locktype = 'advisory';
+   ```
 
 ## 版本
 当前版本：1.2.0
