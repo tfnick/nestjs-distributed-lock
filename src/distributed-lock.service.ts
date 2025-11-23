@@ -56,14 +56,14 @@ export class DistributedLockService {
 
     for (let attempt = 0; attempt <= maxRetries; attempt++) {
       try {
-        const acquired = await this.tryAcquireLock(lockKey, timeout, wait);
+        const { acquired, queryRunner } = await this.tryAcquireLock(lockKey, timeout, wait);
 
         if (acquired) {
           this.logger.debug(`acquire lock success: ${lockKey} original key: ${key}`);
 
           return {
             key,
-            release: () => this.release(key),
+            release: () => this.releaseWithRunner(key, lockKey, queryRunner),
           };
         }
 
@@ -93,7 +93,7 @@ export class DistributedLockService {
       lockKey: number,
       timeout: number,
       wait: boolean,
-  ): Promise<boolean> {
+  ): Promise<{ acquired: boolean; queryRunner?: any }> {
     const queryRunner = this.dataSource.createQueryRunner();
 
     try {
@@ -102,7 +102,7 @@ export class DistributedLockService {
       if (wait) {
         await queryRunner.query('SELECT pg_advisory_lock($1)', [lockKey]);
         // 注意：不释放queryRunner，保持事务和锁
-        return true;
+        return { acquired: true, queryRunner };
       } else {
         const result = await queryRunner.query(
             'SELECT pg_try_advisory_lock($1) AS locked',
@@ -111,9 +111,11 @@ export class DistributedLockService {
 
         const locked = result[0]?.locked === true;
         // 对于非阻塞锁，我们需要立即释放queryRunner和锁
-        await queryRunner.query('SELECT pg_advisory_unlock($1)', [lockKey]);
+        if (locked) {
+          await queryRunner.query('SELECT pg_advisory_unlock($1)', [lockKey]);
+        }
         await queryRunner.release();
-        return locked;
+        return { acquired: locked };
       }
     } catch (error) {
       await queryRunner.release().catch(() => {});
@@ -141,6 +143,29 @@ export class DistributedLockService {
     } catch (error) {
       this.logger.error(`Failed to release lock ${key}:`, error);
       // 不要重新抛出错误，避免影响业务逻辑
+    }
+  }
+
+  private async releaseWithRunner(key: string, lockKey: number, queryRunner: any): Promise<void> {
+    this.logger.debug(`releasing lock with runner: ${lockKey} original key: ${key}`);
+
+    try {
+      if (queryRunner) {
+        // 使用相同的queryRunner释放锁
+        await queryRunner.query('SELECT pg_advisory_unlock($1) AS unlocked', [lockKey]);
+        await queryRunner.release();
+      } else {
+        // 回退到常规释放
+        await this.release(key);
+      }
+
+      this.logger.debug(`release lock success: ${key}`);
+    } catch (error) {
+      // 确保释放queryRunner
+      if (queryRunner) {
+        await queryRunner.release().catch(() => {});
+      }
+      this.logger.error(`Failed to release lock ${key}:`, error);
     }
   }
 

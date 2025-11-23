@@ -375,11 +375,11 @@ export class AppModule {}
 #### 5. 锁释放问题
 ```typescript
 // ❌ 问题：release ignored, lock not held
-// 可能原因：事务结束自动释放、连接被释放等
+// 原因：锁在queryRunner中获取，但在不同连接中释放
 
 // ✅ 解决方案1：使用withLock（推荐）
 await lockService.withLock('resource-key', async () => {
-  // 自动管理锁的获取和释放
+  // 自动管理锁的获取和释放，使用相同连接
   await criticalOperation();
 });
 
@@ -388,7 +388,15 @@ const lock = await lockService.acquire('resource-key', { wait: true });
 try {
   await criticalOperation();
 } finally {
-  await lock.release(); // 确保释放
+  await lock.release(); // 现在使用相同连接释放
+}
+
+// ✅ 解决方案3：验证修复
+const lock = await lockService.acquire('resource-key', { wait: true });
+try {
+  console.log('business logic');
+} finally {
+  await lock.release(); // 日志：release lock success，不再有 lock not held
 }
 ```
 
