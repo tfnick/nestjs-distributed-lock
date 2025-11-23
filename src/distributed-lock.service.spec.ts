@@ -189,6 +189,8 @@ describe('DistributedLockService', () => {
       expect(key1).toBe(key2);
       expect(typeof key1).toBe('number');
       expect(Math.abs(key1)).toBe(key1); // 确保是正数
+      expect(key1).toBeGreaterThanOrEqual(0);
+      expect(key1).toBeLessThan(2147483647); // PostgreSQL限制
     });
 
     it('should generate different hashes for different keys', () => {
@@ -196,6 +198,38 @@ describe('DistributedLockService', () => {
       const key2 = service['generateLockKey']('key2');
 
       expect(key1).not.toBe(key2);
+    });
+
+    it('should handle edge cases properly', () => {
+      // 测试空字符串
+      const emptyKey = service['generateLockKey']('');
+      expect(typeof emptyKey).toBe('number');
+      expect(emptyKey).toBeGreaterThanOrEqual(0);
+      
+      // 测试特殊字符
+      const specialKey = service['generateLockKey']('测试🔒特殊字符');
+      expect(typeof specialKey).toBe('number');
+      expect(specialKey).toBeGreaterThanOrEqual(0);
+      
+      // 测试长字符串
+      const longKey = service['generateLockKey']('a'.repeat(1000));
+      expect(typeof longKey).toBe('number');
+      expect(longKey).toBeGreaterThanOrEqual(0);
+    });
+
+    it('should have good hash distribution', () => {
+      // 测试哈希分布：相似字符串应该产生不同的结果
+      const keys = ['key1', 'key2', 'key3', 'key4', 'key5'];
+      const hashes = keys.map(key => service['generateLockKey'](key));
+      
+      // 检查是否有重复
+      const uniqueHashes = new Set(hashes);
+      expect(uniqueHashes.size).toBe(keys.length);
+      
+      // 检查分布范围
+      const min = Math.min(...hashes);
+      const max = Math.max(...hashes);
+      expect(max - min).toBeGreaterThan(1000); // 应该有合理的分布
     });
   });
 

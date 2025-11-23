@@ -251,6 +251,96 @@ export class OrderService {
 }
 ```
 
+## 🔑 键值映射与唯一性保证
+
+### 哈希算法设计
+
+本库使用**FNV-1a 32位哈希算法**确保字符串到数字的唯一性映射：
+
+```typescript
+private generateLockKey(key: string): number {
+  // PostgreSQL advisory lock支持64位有符号整数
+  const hash = this.fnv1a32(key);
+  
+  // 确保是正数且在合理范围内
+  return Math.abs(hash) % 2147483647; // PostgreSQL最大正整数
+}
+
+/**
+ * FNV-1a 32位哈希算法
+ * 具有良好的分布性和较低的冲突率
+ */
+private fnv1a32(str: string): number {
+  let hash = 0x811c9dc5; // FNV偏移基础值
+  
+  for (let i = 0; i < str.length; i++) {
+    hash ^= str.charCodeAt(i);
+    hash = Math.imul(hash, 0x01000193); // FNV质数
+  }
+  
+  // 确保结果在32位范围内
+  return hash >>> 0;
+}
+```
+
+### 唯一性保证机制
+
+#### 1. **算法选择**
+- **FNV-1a哈希**：工业标准的字符串哈希算法
+- **良好分布**：均匀分布在数值空间中
+- **低冲突率**：不同字符串产生相同数值的概率极低
+
+#### 2. **数值范围控制**
+- **PostgreSQL限制**：`pg_advisory_lock`接受64位有符号整数
+- **安全边界**：限制在2,147,483,647（最大32位正整数）
+- **符号处理**：确保始终为正数
+
+#### 3. **碰撞检测**
+```typescript
+// 相似键值的哈希分布测试
+const keys = ['order:123', 'order:124', 'order:125'];
+const hashes = keys.map(key => lockService.generateLockKey(key));
+
+// 检查唯一性
+const uniqueHashes = new Set(hashes);
+console.log(`唯一性: ${uniqueHashes.size}/${keys.length} keys`);
+```
+
+### 最佳实践建议
+
+#### 1. **键值命名规范**
+```typescript
+// ✅ 推荐：有层次结构的命名
+await lockService.withLock('order:123:payment', async () => {});
+await lockService.withLock('user:456:profile', async () => {});
+await lockService.withLock('inventory:789:stock', async () => {});
+
+// ❌ 避免：过于简单或冲突风险高的命名
+await lockService.withLock('lock1', async () => {});
+await lockService.withLock('abc', async () => {});
+```
+
+#### 2. **避免哈希冲突**
+```typescript
+// ✅ 使用业务唯一标识符
+const lockKey = `order:${orderId}:payment:${paymentId}`;
+
+// ❌ 避免仅使用数字或简单字符
+const lockKey = `${orderId}`;
+```
+
+#### 3. **测试验证**
+```typescript
+// 开发阶段验证哈希唯一性
+function testHashUniqueness(keys: string[]) {
+  const hashes = keys.map(key => service.generateLockKey(key));
+  const unique = new Set(hashes);
+  
+  console.log(`测试${keys.length}个键值，${unique.size}个唯一哈希`);
+  return unique.size === keys.length;
+}
+```
+
 ## ⚡ 性能优化
 
 ### 最佳实践

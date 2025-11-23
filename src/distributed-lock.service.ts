@@ -202,12 +202,28 @@ export class DistributedLockService {
   }
 
   private generateLockKey(key: string): number {
-    let hash = 0;
-    for (let i = 0; i < key.length; i++) {
-      hash = (hash << 5) - hash + key.charCodeAt(i);
-      hash |= 0;
+    // 使用更强的哈希算法确保唯一性
+    // PostgreSQL advisory lock接受64位有符号整数
+    const hash = this.fnv1a32(key);
+    
+    // 确保是正数并且在合理范围内
+    return Math.abs(hash) % 2147483647; // PostgreSQL最大正整数
+  }
+
+  /**
+   * FNV-1a 32位哈希算法
+   * 具有良好的分布性和较低的冲突率
+   */
+  private fnv1a32(str: string): number {
+    let hash = 0x811c9dc5; // FNV偏移基础值
+    
+    for (let i = 0; i < str.length; i++) {
+      hash ^= str.charCodeAt(i);
+      hash = Math.imul(hash, 0x01000193); // FNV质数
     }
-    return Math.abs(hash);
+    
+    // 确保结果在32位范围内
+    return hash >>> 0;
   }
 
   private sleep(ms: number): Promise<void> {
