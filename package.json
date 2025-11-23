@@ -1,6 +1,6 @@
 {
   "name": "@tfnick/nestjs-distributed-lock",
-  "version": "1.2.2",
+  "version": "1.2.3",
   "description": "NestJS分布式锁组件，基于PostgreSQL原生pg_advisory_lock",
   "main": "./dist/index.js",
   "types": "./dist/index.d.ts",
@@ -29,7 +29,7 @@
   "dependencies": {
     "@nestjs/common": "^10.0.0",
     "@nestjs/core": "^10.0.0",
-    "typeorm": "^0.3.0",
+    "typeorm": "^0.3.27",
     "pg": "^8.11.0"
   },
   "devDependencies": {
@@ -46,7 +46,7 @@
   },
   "peerDependencies": {
     "@nestjs/common": "^10.0.0",
-    "@nestjs/typeorm": "^10.0.0",
+    "@nestjs/core": "^10.0.0",
     "typeorm": "^0.3.0"
   }
 }
