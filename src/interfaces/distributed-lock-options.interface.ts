@@ -27,4 +27,5 @@ export interface DistributedLockAsyncOptions {
   useClass?: Type<DistributedLockOptionsFactory>;
   useFactory?: (...args: any[]) => Promise<DistributedLockOptions> | DistributedLockOptions;
   inject?: any[];
+  imports?: any[];
 }
