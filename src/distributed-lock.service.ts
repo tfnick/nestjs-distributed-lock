@@ -46,7 +46,7 @@ export class DistributedLockService {
     this.defaultTimeout = options.defaultTimeout ?? DEFAULT_TIMEOUT;
     this.maxRetries = options.maxRetries ?? DEFAULT_MAX_RETRIES;
     this.retryDelay = options.retryDelay ?? DEFAULT_RETRY_DELAY;
-    
+
     // 使用自定义数据源（支持代理数据源）或默认数据源
     if (!options.dataSource && !defaultDataSource) {
       throw new Error('DataSource is required. Please either provide a dataSource option or ensure TypeORM DataSource is available.');
@@ -60,6 +60,7 @@ export class DistributedLockService {
       wait = true,
       maxRetries = this.maxRetries,
       retryDelay = this.retryDelay,
+      ttl,
     } = options;
 
     const lockKey = this.generateLockKey(key);
@@ -72,11 +73,26 @@ export class DistributedLockService {
         if (acquired) {
           this.logger.debug(`acquire lock success: ${lockKey} original key: ${key}`);
 
+          let timeoutId: NodeJS.Timeout;
+          if (ttl) {
+            timeoutId = setTimeout(() => {
+              this.logger.debug(`Lock ${key} expired after ${ttl}ms`);
+              this.releaseWithRunner(key, lockKey, queryRunner).catch((err) => {
+                this.logger.error(`Failed to release expired lock ${key}`, err);
+              });
+            }, ttl);
+          }
+
           return {
             acquired: true,
             lock: {
               key,
-              release: () => this.releaseWithRunner(key, lockKey, queryRunner),
+              release: async () => {
+                if (ttl) {
+                  clearTimeout(timeoutId);
+                }
+                await this.releaseWithRunner(key, lockKey, queryRunner);
+              },
             },
           };
         }
@@ -91,7 +107,7 @@ export class DistributedLockService {
 
         if (attempt < maxRetries) {
           this.logger.debug(
-              `锁占用，等待重试: ${key} (${attempt + 1}/${maxRetries})`,
+            `锁占用，等待重试: ${key} (${attempt + 1}/${maxRetries})`,
           );
           await this.sleep(retryDelay);
         }
@@ -118,9 +134,9 @@ export class DistributedLockService {
   }
 
   private async tryAcquireLock(
-      lockKey: number,
-      timeout: number,
-      wait: boolean,
+    lockKey: number,
+    timeout: number,
+    wait: boolean,
   ): Promise<{ acquired: boolean; queryRunner?: any }> {
     const queryRunner = this.dataSource.createQueryRunner();
 
@@ -133,20 +149,21 @@ export class DistributedLockService {
         return { acquired: true, queryRunner };
       } else {
         const result = await queryRunner.query(
-            'SELECT pg_try_advisory_lock($1) AS locked',
-            [lockKey],
+          'SELECT pg_try_advisory_lock($1) AS locked',
+          [lockKey],
         );
 
         const locked = result[0]?.locked === true;
-        // 对于非阻塞锁，我们需要立即释放queryRunner和锁
+        // 对于非阻塞锁，如果获取成功，我们需要保持queryRunner和锁
         if (locked) {
-          await queryRunner.query('SELECT pg_advisory_unlock($1)', [lockKey]);
+          return { acquired: true, queryRunner };
         }
+
         await queryRunner.release();
-        return { acquired: locked };
+        return { acquired: false };
       }
     } catch (error) {
-      await queryRunner.release().catch(() => {});
+      await queryRunner.release().catch(() => { });
       throw error;
     }
   }
@@ -157,8 +174,8 @@ export class DistributedLockService {
 
     try {
       const result = await this.dataSource.query(
-          'SELECT pg_advisory_unlock($1) AS unlocked',
-          [lockKey],
+        'SELECT pg_advisory_unlock($1) AS unlocked',
+        [lockKey],
       );
 
       if (!result[0]?.unlocked) {
@@ -191,7 +208,7 @@ export class DistributedLockService {
     } catch (error) {
       // 确保释放queryRunner
       if (queryRunner) {
-        await queryRunner.release().catch(() => {});
+        await queryRunner.release().catch(() => { });
       }
       this.logger.error(`Failed to release lock ${key}:`, error);
     }
@@ -202,8 +219,8 @@ export class DistributedLockService {
 
     try {
       const result = await this.dataSource.query(
-          'SELECT objid FROM pg_locks WHERE locktype = $1 AND objid = $2 AND granted = true',
-          ['advisory', lockKey],
+        'SELECT objid FROM pg_locks WHERE locktype = $1 AND objid = $2 AND granted = true',
+        ['advisory', lockKey],
       );
 
       return result.length > 0;
@@ -214,9 +231,9 @@ export class DistributedLockService {
   }
 
   async withLock<T>(
-      key: string,
-      fn: () => Promise<T>,
-      options: LockAcquireOptions = {},
+    key: string,
+    fn: () => Promise<T>,
+    options: LockAcquireOptions = {},
   ): Promise<T> {
     const result = await this.acquire(key, options);
 
@@ -237,7 +254,7 @@ export class DistributedLockService {
     // 使用更强的哈希算法确保唯一性
     // PostgreSQL advisory lock接受64位有符号整数
     const hash = this.fnv1a32(key);
-    
+
     // 确保是正数并且在合理范围内
     return Math.abs(hash) % 2147483647; // PostgreSQL最大正整数
   }
@@ -248,12 +265,12 @@ export class DistributedLockService {
    */
   private fnv1a32(str: string): number {
     let hash = 0x811c9dc5; // FNV偏移基础值
-    
+
     for (let i = 0; i < str.length; i++) {
       hash ^= str.charCodeAt(i);
       hash = Math.imul(hash, 0x01000193); // FNV质数
     }
-    
+
     // 确保结果在32位范围内
     return hash >>> 0;
   }
@@ -266,9 +283,9 @@ export class DistributedLockService {
    * 基于结果的锁执行方法（不抛出异常）
    */
   async withLockResult<T>(
-      key: string,
-      fn: () => Promise<T>,
-      options: LockAcquireOptions = {},
+    key: string,
+    fn: () => Promise<T>,
+    options: LockAcquireOptions = {},
   ): Promise<{ success: boolean; result?: T; error?: Error }> {
     const acquireResult = await this.acquire(key, options);
 
@@ -298,11 +315,11 @@ export class DistributedLockService {
    */
   async acquireLock(key: string, options: LockAcquireOptions = {}): Promise<LockHandle> {
     const result = await this.acquire(key, options);
-    
+
     if (!result.acquired) {
       throw result.error || new Error(`Failed to acquire lock: ${key}`);
     }
-    
+
     return result.lock!;
   }
 }
